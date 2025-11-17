@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Allocation Strategies Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse-allocate {
+            0% { box-shadow: 0 0 0 0 rgba(192, 132, 252, 0.7); }
+            70% { box-shadow: 0 0 0 5px rgba(192, 132, 252, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(192, 132, 252, 0); }
+        }
+        .allocated-pulse {
+            animation: pulse-allocate 0.5s ease-out;
+        }
+        .memory-block {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #d1d5db;
+            text-align: center;
+            transition: all 0.3s ease-in-out;
+            cursor: default;
+            min-height: 40px;
+            font-size: 0.8rem;
+            flex-direction: column;
+            border-radius: 0.375rem;
+            border: 1px solid #4b5563;
+            margin-bottom: 4px;
+        }
+        .free-block {
+            background-color: #1f2937;
+        }
+        .allocated-block {
+            background-color: #6d28d9;
+            border-color: #a78bfa;
+            color: white;
+            font-weight: 600;
+        }
+        .allocated-block p {
+            line-height: 1;
+        }
+        #log-output {
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        #summary-output {
+            padding: 1rem; 
+            border: 1px solid #4b5563;
+            background-color: #0f172a;
+            border-radius: 0.5rem;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary-purple': '#a78bfa',
+                        'secondary-dark': '#0f0f0f',
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen p-4 sm:p-8">
+
+    <div class="max-w-6xl mx-auto">
+        <header class="text-center py-6 mb-8 border-b border-purple-700">
+            <h1 class="text-4xl sm:text-5xl font-extrabold text-primary-purple tracking-tight">
+                Memory Allocation Simulator
+            </h1>
+            <p class="mt-2 text-gray-400 text-lg">First Fit vs. Best Fit Strategy</p>
+        </header>
+
+        <section class="bg-gray-800 p-6 rounded-xl shadow-2xl mb-8">
+            <h2 class="text-2xl font-semibold mb-4 text-purple-300">1. Setup Configuration</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                    <label for="blocks-input" class="block text-sm font-medium text-gray-300 mb-2">
+                        Memory Blocks (Available Free Partitions)
+                    </label>
+                    <input type="text" id="blocks-input" value="100, 50, 120, 30"
+                           class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:border-primary-purple focus:ring focus:ring-primary-purple/50 text-white"
+                           placeholder="e.g., 100, 50, 120, 30">
+                    <p class="text-xs text-gray-400 mt-1">Enter sizes (KB) separated by commas.</p>
+                </div>
+
+                <div>
+                    <label for="processes-input" class="block text-sm font-medium text-gray-300 mb-2">
+                        Processes (Requests for Memory)
+                    </label>
+                    <input type="text" id="processes-input" value="45, 10, 80"
+                           class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:border-primary-purple focus:ring focus:ring-primary-purple/50 text-white"
+                           placeholder="e.g., 45, 10, 80">
+                    <p class="text-xs text-gray-400 mt-1">Enter sizes (KB) required by each process.</p>
+                </div>
+
+                <div>
+                    <label for="strategy-select" class="block text-sm font-medium text-gray-300 mb-2">
+                        Allocation Strategy
+                    </label>
+                    <select id="strategy-select"
+                            class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:border-primary-purple focus:ring focus:ring-primary-purple/50 text-white appearance-none">
+                        <option value="first-fit">First Fit (Use the first block large enough)</option>
+                        <option value="best-fit">Best Fit (Use the smallest block large enough)</option>
+                    </select>
+                    <p class="text-xs text-gray-400 mt-1">Choose the method for assigning memory.</p>
+                </div>
+            </div>
+
+            <button onclick="runSimulation()"
+                    class="mt-6 w-full py-3 px-6 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-lg transition duration-200 ease-in-out transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-purple-500 focus:ring-opacity-50">
+                Run Allocation Simulation
+            </button>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-1 bg-gray-800 p-6 rounded-xl shadow-2xl">
+                <h2 class="text-2xl font-semibold mb-4 text-purple-300">2. Memory Diagram (Visual Allocation)</h2>
+                <div id="memory-diagram" class="space-y-1 p-2 border border-gray-700 rounded-lg min-h-[200px]">
+                    <p class="text-gray-500 text-center pt-8">Press 'Run Simulation' to visualize the blocks.</p>
+                </div>
+                <div class="mt-4 text-xs text-gray-400">
+                    <p>Total Available Memory: <span id="total-memory" class="font-bold text-primary-purple">0</span> KB</p>
+                    <p>Total Required Process Size: <span id="total-processes" class="font-bold text-primary-purple">0</span> KB</p>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 bg-gray-800 p-6 rounded-xl shadow-2xl">
+                <h2 class="text-2xl font-semibold mb-4 text-purple-300">3. Execution Log and Final Results</h2>
+
+                <h3 class="text-xl font-medium mt-6 text-gray-200">Execution Log (Step-by-Step Allocation)</h3>
+                <div id="log-output" class="bg-gray-900 p-4 mt-2 rounded-lg text-sm text-gray-300 font-mono border border-gray-700">
+                    <p>// Simulation not started yet. Configure the blocks and processes above.</p>
+                </div>
+
+                <h3 class="text-xl font-medium mt-6 text-gray-200">Final Allocation Summary (The Answer)</h3>
+                <div id="summary-output" class="bg-gray-900 p-4 mt-2 rounded-lg text-sm text-primary-purple border border-gray-700">
+                    <p>// Final summary will appear here.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        let blockCounter = 0;
+        let processCounter = 0;
+        let memoryBlocks = [];
+        let processQueue = [];
+        const maxRetries = 5;
+
+        function parseInputs() {
+            const blocksInput = document.getElementById('blocks-input').value;
+            const processesInput = document.getElementById('processes-input').value;
+
+            blockCounter = 0;
+            processCounter = 0;
+
+            try {
+                memoryBlocks = blocksInput.split(',').map(s => {
+                    const size = parseInt(s.trim());
+                    if (isNaN(size) || size <= 0) throw new Error("Invalid block size.");
+                    blockCounter++;
+                    return {
+                        id: 'Block-' + blockCounter,
+                        size: size,
+                        initialSize: size,
+                        free: true,
+                        processId: null
+                    };
+                });
+
+                processQueue = processesInput.split(',').map(s => {
+                    const size = parseInt(s.trim());
+                    if (isNaN(size) || size <= 0) throw new Error("Invalid process size.");
+                    processCounter++;
+                    return {
+                        id: 'P' + processCounter,
+                        size: size,
+                        allocated: false,
+                        blockId: null,
+                        wastage: 0
+                    };
+                });
+
+                if (memoryBlocks.length === 0 || processQueue.length === 0) {
+                     alertMessage("Please enter valid, non-empty lists of blocks and processes.", 'error');
+                     return false;
+                }
+
+                return true;
+
+            } catch (e) {
+                alertMessage("Input error: Please ensure all inputs are positive, comma-separated numbers.", 'error');
+                return false;
+            }
+        }
+
+        function runFirstFit(blocks, processes, log) {
+            log.push(`\n--- Starting **FIRST FIT** Allocation ---\n(Chooses the first available block large enough)\n`);
+
+            for (let i = 0; i < processes.length; i++) {
+                const process = processes[i];
+                let allocated = false;
+
+                log.push(`\n[Process ${process.id} (${process.size} KB) Request]`);
+
+                for (let j = 0; j < blocks.length; j++) {
+                    const block = blocks[j];
+
+                    if (block.free && block.size >= process.size) {
+                        const remainingSize = block.size - process.size;
+                        log.push(`  ✓ Found **${block.id}** (${block.size} KB). Allocating.`);
+
+                        block.processId = process.id;
+                        block.free = false;
+                        block.size = process.size;
+
+                        process.wastage = remainingSize; 
+                        
+                        if (remainingSize > 0) {
+                            blocks.splice(j + 1, 0, {
+                                id: 'Hole-' + blockCounter++,
+                                size: remainingSize,
+                                initialSize: remainingSize,
+                                free: true,
+                                processId: null
+                            });
+                            log.push(`  > Fragmentation: ${remainingSize} KB is split off into a **new free hole**.`);
+                        }
+
+                        process.allocated = true;
+                        process.blockId = block.id;
+                        allocated = true;
+                        break;
+                    } else {
+                        if (block.free) {
+                            log.push(`  - Skipping ${block.id} (${block.size} KB): Too small.`);
+                        } else {
+                            log.push(`  - Skipping ${block.id}: Already allocated to P${block.processId}.`);
+                        }
+                    }
+                }
+
+                if (!allocated) {
+                    log.push(`  ✗ **Failed to Allocate** Process ${process.id}. No suitable block found.`);
+                }
+            }
+            log.push(`\n--- Allocation Cycle Complete ---`);
+            return blocks;
+        }
+
+        function runBestFit(blocks, processes, log) {
+            log.push(`\n--- Starting **BEST FIT** Allocation ---\n(Chooses the smallest block large enough)\n`);
+
+            for (let i = 0; i < processes.length; i++) {
+                const process = processes[i];
+                let bestFitBlockIndex = -1;
+                let minDifference = Infinity;
+
+                log.push(`\n[Process ${process.id} (${process.size} KB) Request]`);
+
+                for (let j = 0; j < blocks.length; j++) {
+                    const block = blocks[j];
+
+                    if (block.free && block.size >= process.size) {
+                        const difference = block.size - process.size;
+                        if (difference < minDifference) {
+                            log.push(`  - Found a NEW Best Fit candidate: ${block.id} (Size: ${block.size} KB, Leftover: ${difference} KB)`);
+                            minDifference = difference;
+                            bestFitBlockIndex = j;
+                        } else {
+                            log.push(`  - Candidate ${block.id} (Size: ${block.size} KB) is worse than current best.`);
+                        }
+                    } else if (block.free) {
+                         log.push(`  - Skipping ${block.id} (${block.size} KB): Too small.`);
+                    }
+                }
+
+                if (bestFitBlockIndex !== -1) {
+                    const block = blocks[bestFitBlockIndex];
+                    const remainingSize = block.size - process.size;
+
+                    log.push(`  ✓ Allocating to **${block.id}** (Chosen Best Fit).`);
+
+                    block.processId = process.id;
+                    block.free = false;
+                    block.size = process.size;
+                    
+                    process.wastage = remainingSize;
+
+                    if (remainingSize > 0) {
+                        blocks.splice(bestFitBlockIndex + 1, 0, {
+                            id: 'Hole-' + blockCounter++,
+                            size: remainingSize,
+                            initialSize: remainingSize,
+                            free: true,
+                            processId: null
+                        });
+                        log.push(`  > Fragmentation: ${remainingSize} KB is split off into a **new free hole**.`);
+                    }
+
+                    process.allocated = true;
+                    process.blockId = block.id;
+
+                } else {
+                    log.push(`  ✗ **Failed to Allocate** Process ${process.id}. No suitable block found.`);
+                }
+            }
+            log.push(`\n--- Allocation Cycle Complete ---`);
+            return blocks;
+        }
+
+        function alertMessage(message, type = 'info') {
+            const container = document.getElementById('summary-output');
+            const color = type === 'error' ? 'text-red-400' : 'text-yellow-400';
+            container.innerHTML = `<p class="font-bold ${color}">${message}</p>`;
+        }
+
+        function renderDiagram(blocks) {
+            const container = document.getElementById('memory-diagram');
+            container.innerHTML = '';
+            let totalMemory = 0;
+
+            blocks.forEach(block => {
+                totalMemory += block.initialSize;
+
+                const isAllocated = !block.free;
+                const cssClass = isAllocated ? 'allocated-block allocated-pulse' : 'free-block';
+                const content = isAllocated
+                    ? `<p class="text-sm font-bold">${block.processId}</p><p class="text-xs">(${block.size} KB)</p>`
+                    : `<p class="text-xs font-semibold">${block.id}</p><p class="text-xs">(${block.size} KB Free)</p>`;
+
+                const blockDiv = document.createElement('div');
+                blockDiv.className = `memory-block ${cssClass}`;
+                blockDiv.style.minHeight = Math.max(20, block.size * 0.5) + 'px';
+                blockDiv.innerHTML = content;
+
+                container.appendChild(blockDiv);
+            });
+
+            document.getElementById('total-memory').textContent = totalMemory + ' KB';
+        }
+
+        function renderSummary(blocks, processes, strategy) {
+            let tableRows = '';
+            let totalExternalFragmentation = 0;
+            let unallocatedProcesses = [];
+            let allocatedProcessesCount = 0;
+
+            processes.forEach(p => {
+                const wastage = p.allocated ? (p.wastage || 0) : '-';
+                const allocatedBlock = p.allocated ? p.blockId : 'Unallocated';
+
+                if (p.allocated) {
+                    totalExternalFragmentation += p.wastage;
+                    allocatedProcessesCount++;
+                } else {
+                    unallocatedProcesses.push(`- **${p.id}** (${p.size} KB)`);
+                }
+
+                const rowColor = p.allocated ? 'bg-gray-800 hover:bg-gray-700/70' : 'bg-red-900/10 hover:bg-red-900/20';
+
+                tableRows += `
+                    <tr class="${rowColor} transition-colors duration-150">
+                        <td class="p-3 font-semibold">${p.id}</td>
+                        <td class="p-3">${p.size} KB</td>
+                        <td class="p-3">${allocatedBlock}</td>
+                        <td class="p-3">${wastage !== '-' ? wastage + ' KB' : '-'}</td>
+                    </tr>
+                `;
+            });
+
+            const finalHtml = `
+                <div class="mb-4 text-white text-lg font-bold">Strategy Used: ${strategy.toUpperCase()}</div>
+
+                <div class="overflow-x-auto rounded-lg shadow-xl border border-purple-800">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-purple-900/80">
+                            <tr>
+                                <th class="p-3 text-left text-xs font-bold text-gray-200 uppercase tracking-wider rounded-tl-lg">Process</th>
+                                <th class="p-3 text-left text-xs font-bold text-gray-200 uppercase tracking-wider">Size</th>
+                                <th class="p-3 text-left text-xs font-bold text-gray-200 uppercase tracking-wider">Allocated To</th>
+                                <th class="p-3 text-left text-xs font-bold text-gray-200 uppercase tracking-wider rounded-tr-lg">Leftover/Hole Created (KB)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700 text-gray-200">
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+
+                <h4 class="text-lg font-medium mt-6 text-purple-300">Allocation Summary</h4>
+                <div class="mt-2 text-sm text-gray-300 space-y-1">
+                    <p class="font-bold text-base">Processes Allocated: <span class="text-primary-purple">${allocatedProcessesCount} / ${processes.length}</span></p>
+                    <p class="font-bold text-base">Total External Fragmentation: <span class="text-red-400">${totalExternalFragmentation} KB</span></p>
+                    <p class="pt-2 text-xs text-gray-500">*Since this is Dynamic Allocation (blocks are split), the "Leftover/Hole Created" is the space immediately split off, which contributes to the Total External Fragmentation.*</p>
+                </div>
+            `;
+
+            document.getElementById('summary-output').innerHTML = finalHtml;
+        }
+
+        function runSimulation() {
+            if (!parseInputs()) return;
+
+            let blocksToSimulate = JSON.parse(JSON.stringify(memoryBlocks));
+            let processesToSimulate = JSON.parse(JSON.stringify(processQueue));
+            let log = [];
+            const strategy = document.getElementById('strategy-select').value;
+
+            const totalProcessSize = processesToSimulate.reduce((sum, p) => sum + p.size, 0);
+            document.getElementById('total-processes').textContent = totalProcessSize + ' KB';
+
+            log.push(`INITIAL STATE: Blocks Available: ${memoryBlocks.map(b => b.size + ' KB').join(', ')}. Processes Waiting: ${processQueue.map(p => p.size + ' KB').join(', ')}.`);
+
+            let finalBlocks;
+            if (strategy === 'first-fit') {
+                finalBlocks = runFirstFit(blocksToSimulate, processesToSimulate, log);
+            } else if (strategy === 'best-fit') {
+                finalBlocks = runBestFit(blocksToSimulate, processesToSimulate, log);
+            }
+
+            document.getElementById('log-output').textContent = log.join('\n');
+
+            renderDiagram(finalBlocks);
+
+            renderSummary(finalBlocks, processesToSimulate, strategy);
+        }
+
+        window.onload = () => {
+            parseInputs();
+            renderDiagram(memoryBlocks);
+        };
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    </script>
+
+</body>
+</html>
